@@ -1,0 +1,3 @@
+Part         , Model, Vendor Part no, Description                                , Quantity Required, Quantity Ordered, Cost $(of ordered quantity), Cost $(of required quantity), Vendor Supplier, Order Status, date ordered, URL Link
+Threaded Rod ,      , 175-7001      , Zinc Plated Mild Steel Threaded Rod M6 20mm,                11, 1 bag of 50     ,                       26.40,                         5.80, RS Components  , Ordered     , 10/06/25    , https://au.rs-online.com/web/p/threaded-rods/1757001
+spring washer,      , 175-7002      , Zinc Plated Mild Steel Spring Washer M6    ,                11, 1 bag of 100    ,                        7.22,                         0.79, RS Components  , Ordered     , 10/06/25    , https://au.rs-online.com/web/p/washers/2310693
