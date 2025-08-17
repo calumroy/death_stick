@@ -1,4 +1,7 @@
-BMS Specifications
+## BMS Specifications
+
+From here: 
+https://flipsky.net/collections/bms/products/bms-8s-14s-lifepo4-li-ion
 
 Charging current: <60A
 Discharge current: < 150A
