@@ -1,1 +1,4 @@
 part_docs/.$death_stick_wiring_diagram.drawio.bkp
+
+# ignore esp-idf installation in .espressif
+.espressif/
