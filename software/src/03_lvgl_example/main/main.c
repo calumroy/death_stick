@@ -17,6 +17,7 @@
 
 #include "iot_button.h"
 #include "button_gpio.h"
+#include "esp_lcd_panel_ops.h"
 
 #include "demos/lv_demos.h"
 
@@ -53,6 +54,7 @@ void lv_fs_fatfs_init(void);
 static esp_err_t app_lvgl_init(void);
 static void button_init(void);
 static void touch_test(void);
+static void display_test_fill(uint16_t color565);
 
 void app_main(void)
 {
@@ -79,15 +81,19 @@ void app_main(void)
     bsp_display_brightness_init();
     bsp_display_set_brightness(100);
 
-    // button_init();
+    /* Quick sanity: fill the screen with a solid color to verify panel IO */
+    display_test_fill(0x07E0); /* Green */
+
+    button_init();
     // touch_test();
 
 
     if (lvgl_port_lock(0))
     {
-        // lv_demo_benchmark();
-        // lv_demo_music();
-        lv_demo_widgets();
+        /* Minimal LVGL content */
+        lv_obj_t *label = lv_label_create(lv_scr_act());
+        lv_label_set_text(label, "Hello from ESP32-S3");
+        lv_obj_center(label);
         lvgl_port_unlock();
     }
 }
@@ -147,12 +153,16 @@ static esp_err_t app_lvgl_init(void)
 #endif
     lvgl_disp = lvgl_port_add_disp(&disp_cfg);
 
-    /* Add touch input (for selected screen) */
-    const lvgl_port_touch_cfg_t touch_cfg = {
-        .disp = lvgl_disp,
-        .handle = touch_handle,
-    };
-    lvgl_touch_indev = lvgl_port_add_touch(&touch_cfg);
+    /* Add touch input if available */
+    if (touch_handle != NULL) {
+        const lvgl_port_touch_cfg_t touch_cfg = {
+            .disp = lvgl_disp,
+            .handle = touch_handle,
+        };
+        lvgl_touch_indev = lvgl_port_add_touch(&touch_cfg);
+    } else {
+        ESP_LOGW(TAG, "Touch not available; skipping LVGL touch input");
+    }
 
     return ESP_OK;
 }
@@ -235,4 +245,18 @@ static void touch_test(void)
         lvgl_port_unlock();
     }
     
+}
+
+static void display_test_fill(uint16_t color565)
+{
+    /* Draw one row at a time using low-level panel API */
+    uint16_t row[EXAMPLE_LCD_H_RES];
+    for (int x = 0; x < EXAMPLE_LCD_H_RES; x++)
+    {
+        row[x] = color565;
+    }
+    for (int y = 0; y < EXAMPLE_LCD_V_RES; y++)
+    {
+        esp_lcd_panel_draw_bitmap(panel_handle, 0, y, EXAMPLE_LCD_H_RES, y + 1, row);
+    }
 }

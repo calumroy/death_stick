@@ -46,9 +46,12 @@ Inside the container (ESP-IDF is already exported by entrypoint):
 ```bash
 idf.py --version
 idf.py set-target esp32s3
+cd ./software/src/03_lvgl_example
 idf.py build
 idf.py -p /dev/ttyACM0 flash monitor
 ```
+Quit the serial monitor by typing Ctrl-]
+--- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H
 
 Reattach to a running container:
 
@@ -59,3 +62,5 @@ bash scripts/podman-exec.sh bash
 Troubleshooting:
 - If serial permissions fail, ensure the host user is in `dialout` and the device exists. You can try `TTY_DEVICE=/dev/ttyACM0`.
 - Tools cache persists in `.espressif`. Delete it to force re-install.
+
+- If you power cycle the ESP or disconnct the USB and reconnct the podman container will need to be restarted otherwise it won't get permission to use the device serial port anymore.

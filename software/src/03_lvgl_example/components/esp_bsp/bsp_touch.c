@@ -5,6 +5,9 @@
 #include "esp_lcd_touch_axs5106.h"
 
 #include "esp_log.h"
+#include "driver/i2c_master.h"
+
+static const char *TAG = "bsp_touch";
 #include "bsp_touch.h"
 
 void bsp_touch_init(esp_lcd_touch_handle_t *touch_handle, i2c_master_bus_handle_t bus_handle, uint16_t xmax, uint16_t ymax, uint16_t rotation)
@@ -13,8 +16,30 @@ void bsp_touch_init(esp_lcd_touch_handle_t *touch_handle, i2c_master_bus_handle_
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = ESP_LCD_TOUCH_IO_I2C_AXS5106_ADDRESS,
-        .scl_speed_hz = 400000,
+        .scl_speed_hz = 50000,
     };
+
+    ESP_LOGI(TAG, "Probing touch I2C at 0x%02x", dev_cfg.device_address);
+    bool found = false;
+    if (i2c_master_probe(bus_handle, dev_cfg.device_address, 100) == ESP_OK) {
+        ESP_LOGI(TAG, "Found touch at 0x%02x", dev_cfg.device_address);
+        found = true;
+    } else {
+        const uint8_t candidates[] = { 0x38, 0x14, 0x63, 0x31 };
+        for (size_t i = 0; i < sizeof(candidates); ++i) {
+            ESP_LOGW(TAG, "Probe 0x%02x failed, trying 0x%02x", dev_cfg.device_address, candidates[i]);
+            if (i2c_master_probe(bus_handle, candidates[i], 100) == ESP_OK) {
+                dev_cfg.device_address = candidates[i];
+                ESP_LOGW(TAG, "Using fallback touch address 0x%02x", candidates[i]);
+                found = true;
+                break;
+            }
+        }
+    }
+    if (!found) {
+        ESP_LOGE(TAG, "No touch device responded on I2C bus; skipping touch init");
+        return;
+    }
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
 
     esp_lcd_touch_config_t tp_cfg = {};

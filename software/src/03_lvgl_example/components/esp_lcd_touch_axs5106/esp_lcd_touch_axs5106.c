@@ -100,6 +100,7 @@ esp_err_t esp_lcd_touch_new_i2c_axs5106(i2c_master_dev_handle_t dev_handle, cons
     ESP_GOTO_ON_ERROR(ret, err, TAG, "AXS5106 reset failed");
 
     /* Init controller */
+    vTaskDelay(pdMS_TO_TICKS(50));
     ret = touch_axs5106_init(esp_lcd_touch_axs5106);
     ESP_GOTO_ON_ERROR(ret, err, TAG, "AXS5106 init failed");
 
@@ -220,24 +221,24 @@ static esp_err_t esp_lcd_touch_axs5106_del(esp_lcd_touch_handle_t tp)
 static esp_err_t touch_axs5106_i2c_write(esp_lcd_touch_handle_t tp, uint8_t reg, uint8_t *data, uint8_t len)
 {
     assert(tp != NULL);
-    // uint8_t buffer[len + 1];
-    // buffer[0] = reg;
-    // for (size_t i = 0; i < len; i++)
-    // {
-    //     buffer[i + 1] = data[i];
-    // }
-    // return i2c_master_transmit(g_dev_handle, &reg, 1, 100);
+    uint8_t buffer_len = (uint8_t)(len + 1);
+    uint8_t buffer[1 + 16];
+    if (len > 16) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    buffer[0] = reg;
+    for (size_t i = 0; i < len; i++) {
+        buffer[i + 1] = data[i];
+    }
+    return i2c_master_transmit(g_dev_handle, buffer, buffer_len, 1000);
 }
 
 static esp_err_t touch_axs5106_i2c_read(esp_lcd_touch_handle_t tp, uint8_t reg, uint8_t *data, uint8_t len)
 {
     assert(tp != NULL);
     assert(data != NULL);
-    esp_err_t ret = ESP_OK;
-    ret = i2c_master_transmit(g_dev_handle, &reg, 1, 100);
-    ret = i2c_master_receive(g_dev_handle, data, len, 100);
-    /* Read data */
-    return ret;
+    /* Combined write-then-read with repeated START */
+    return i2c_master_transmit_receive(g_dev_handle, &reg, 1, data, len, 1000);
 }
 
 static esp_err_t touch_axs5106_init(esp_lcd_touch_handle_t tp)

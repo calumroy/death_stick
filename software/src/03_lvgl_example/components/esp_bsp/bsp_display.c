@@ -44,16 +44,18 @@ void bsp_display_init(esp_lcd_panel_io_handle_t *io_handle, esp_lcd_panel_handle
 
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = EXAMPLE_PIN_LCD_RST,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
-        .bits_per_pixel = 16,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
+        .bits_per_pixel = 18,
     };
     esp_lcd_new_panel_jd9853(*io_handle, &panel_config, panel_handle);
 
     ESP_ERROR_CHECK(esp_lcd_panel_reset(*panel_handle));
+    vTaskDelay(pdMS_TO_TICKS(120));
     ESP_ERROR_CHECK(esp_lcd_panel_init(*panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(*panel_handle, true));
+    /* Try without inversion first */
+    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(*panel_handle, false));
     // ESP_ERROR_CHECK(esp_lcd_panel_set_gap(*panel_handle, 0, 34));
-    ESP_ERROR_CHECK(esp_lcd_panel_mirror(*panel_handle, false, false));
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(*panel_handle, false, true));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(*panel_handle, true));
 }
 

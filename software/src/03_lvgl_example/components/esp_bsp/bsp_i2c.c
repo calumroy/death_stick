@@ -13,6 +13,7 @@ i2c_master_bus_handle_t bsp_i2c_init(void)
     i2c_mst_config.glitch_ignore_cnt = 7;
     i2c_mst_config.flags.enable_internal_pullup = 1;
 
+    /* Lower SCL speed to 100kHz by setting device speed when adding device */
     ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &i2c_bus_handle));
     return i2c_bus_handle;
 }
