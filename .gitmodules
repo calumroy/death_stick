@@ -1,0 +1,3 @@
+[submodule "software/esp_idf"]
+	path = software/esp_idf
+	url = https://github.com/espressif/esp-idf.git
