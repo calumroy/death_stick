@@ -1,2 +1,2 @@
-idf_component_register(SRCS "main.c" "lv_fs_port.c"
+idf_component_register(SRCS "main.c" "lv_fs_port.c" "image_1.c"
                     INCLUDE_DIRS ".")

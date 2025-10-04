@@ -56,6 +56,9 @@ static void button_init(void);
 static void touch_test(void);
 static void display_test_fill(uint16_t color565);
 
+static lv_obj_t *img = NULL;
+LV_IMG_DECLARE(image_1);
+
 void app_main(void)
 {
     i2c_master_bus_handle_t i2c_bus_handle;
@@ -81,8 +84,7 @@ void app_main(void)
     bsp_display_brightness_init();
     bsp_display_set_brightness(100);
 
-    /* Quick sanity: fill the screen with a solid color to verify panel IO */
-    display_test_fill(0x07E0); /* Green */
+    /* Show an image via LVGL instead of raw panel fill */
 
     button_init();
     // touch_test();
@@ -90,10 +92,9 @@ void app_main(void)
 
     if (lvgl_port_lock(0))
     {
-        /* Minimal LVGL content */
-        lv_obj_t *label = lv_label_create(lv_scr_act());
-        lv_label_set_text(label, "Hello from ESP32-S3");
-        lv_obj_center(label);
+        img = lv_img_create(lv_scr_act());
+        lv_img_set_src(img, &image_1);
+        lv_obj_align(img, LV_ALIGN_CENTER, 0, 0);
         lvgl_port_unlock();
     }
 }
