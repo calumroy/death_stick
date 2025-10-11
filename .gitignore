@@ -3,6 +3,7 @@ part_docs/.$death_stick_wiring_diagram.drawio.bkp
 # ignore esp-idf installation in .espressif
 .espressif/
 # Ignore the examples in the software/ESP32-S3-Touch-LCD-1.47-Demo
-software/ESP32-S3-Touch-LCD-1.47-Demo/*
+software/ESP32-S3-Touch-LCD-1.47-Demo/Arduino/*
+software/ESP32-S3-Touch-LCD-1.47-Demo/ESP-IDF/*
 software/flash_download_tool_3.9.7/*
 software/src/03_lvgl_example/managed_components/*
