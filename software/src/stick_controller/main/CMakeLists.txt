@@ -7,7 +7,7 @@ idf_component_register(
         "Button_Driver/multi_button.c"
         "Button_Driver/Button_Driver.c"
         "images/pictures.c"
-        "images/screenshot1.c"
+        "images/dark_retro_sea_small.c"
     INCLUDE_DIRS
         "."
         "./LCD_Driver"
