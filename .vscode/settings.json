@@ -1,6 +1,8 @@
 {
     "idf.pythonInstallPath": "/home/calum/.pyenv/shims/python",
     "files.associations": {
-        "gpio.h": "c"
-    }
+        "gpio.h": "c",
+        "lv_png.h": "c"
+    },
+    "cmake.sourceDirectory": "/home/calum/Documents/projects/death_stick/software/src/01_factory"
 }

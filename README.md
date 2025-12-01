@@ -49,7 +49,7 @@ idf.py set-target esp32s3
 cd ./software/src/03_lvgl_example
 idf.py build
 idf.py -p /dev/ttyACM0 flash monitor
-```
+```c
 Quit the serial monitor by typing Ctrl-]
 --- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H
 
