@@ -47,6 +47,7 @@ static void button_task(void *arg) {
     while (1) {
         if (BOOT_KEY_State == SINGLE_CLICK) {
             BOOT_KEY_State = NONE_PRESS;
+            ESP_LOGI(TAG, "Button pushed");
             toggle_picture();
         }
         vTaskDelay(pdMS_TO_TICKS(50));
