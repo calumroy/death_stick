@@ -53,7 +53,7 @@ static void ui_create(void) {
 
     // Background image (PNG, embedded)
     bg_img_obj = lv_img_create(lv_scr_act());
-    rotate_bg_90_cw();
+    rotate_bg_90_cw();  // The background image is rotated 90 degrees clockwise.
     lv_img_set_src(bg_img_obj, &dark_retro_sea_small_rot);
     lv_obj_center(bg_img_obj);
     // Optionally scale if needed for screen size (commented out by default)
