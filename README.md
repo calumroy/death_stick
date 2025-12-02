@@ -64,3 +64,13 @@ Troubleshooting:
 - Tools cache persists in `.espressif`. Delete it to force re-install.
 
 - If you power cycle the ESP or disconnct the USB and reconnct the podman container will need to be restarted otherwise it won't get permission to use the device serial port anymore.
+
+
+## Flipsky Uart settings
+
+App Settings → UART
+    Baud rate: 115200
+    UART Mode: UART
+App to Use: UART
+
+We use Uart0 to communicate from the ESP32 to the Flipsky ESC.
