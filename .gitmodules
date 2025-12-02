@@ -1,3 +1,6 @@
 [submodule "software/esp_idf"]
 	path = software/esp_idf
 	url = https://github.com/espressif/esp-idf.git
+[submodule "software/VescUart"]
+	path = software/VescUart
+	url = https://github.com/SolidGeek/VescUart.git
