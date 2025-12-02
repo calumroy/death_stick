@@ -1,29 +1,58 @@
+/**
+ * @file main.c
+ * @brief Death Stick Controller - Main Application
+ * 
+ * Controls a VESC motor controller via UART with three speed levels
+ * and displays telemetry on the built-in LCD with background image.
+ * 
+ * Speed Buttons (active LOW with internal pull-ups):
+ *   GP2 - SLOW:   Low current
+ *   GP3 - MEDIUM: Medium current
+ *   GP4 - FAST:   High current
+ * 
+ * VESC Communication:
+ *   UART0 at 115200 baud
+ *   TX -> VESC RX (Yellow wire)
+ *   RX -> VESC TX (White wire)
+ */
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "lvgl.h"
 
 #include "LCD_Driver/ST7789.h"
 #include "LVGL_Driver/LVGL_Driver.h"
 #include "Button_Driver/Button_Driver.h"
+#include "Button_Driver/Speed_Buttons.h"
+#include "VESC_Driver/vesc_uart.h"
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
-// Images
-extern lv_img_dsc_t stick_img1;
-extern lv_img_dsc_t stick_img2;
-void stick_images_init(void);
+static const char *TAG = "stick_controller";
+
+// =============================================================================
+// Background Image (rotated 90° for landscape view)
+// =============================================================================
+
+// Original portrait background image (172 wide x 320 tall)
 extern const lv_img_dsc_t dark_retro_sea_small;
 
-static lv_img_dsc_t dark_retro_sea_small_rot;
-static uint16_t dark_retro_sea_small_rot_map[EXAMPLE_LCD_H_RES * EXAMPLE_LCD_V_RES];
+// Rotated image buffer and descriptor
+static lv_img_dsc_t bg_img_rotated;
+static uint16_t bg_img_rotated_buf[EXAMPLE_LCD_H_RES * EXAMPLE_LCD_V_RES];
 
+// Rotate image 90 degrees clockwise
 static void rotate_bg_90_cw(void) {
     const lv_img_dsc_t *src = &dark_retro_sea_small;
     const uint16_t *src16 = (const uint16_t *)src->data;
-    uint16_t *dst16 = dark_retro_sea_small_rot_map;
+    uint16_t *dst16 = bg_img_rotated_buf;
     uint16_t src_w = src->header.w;
     uint16_t src_h = src->header.h;
     uint16_t dst_w = src_h;
+    
     for (uint16_t y = 0; y < src_h; y++) {
         for (uint16_t x = 0; x < src_w; x++) {
             uint32_t src_idx = (uint32_t)y * src_w + x;
@@ -33,75 +62,314 @@ static void rotate_bg_90_cw(void) {
             dst16[dst_idx] = src16[src_idx];
         }
     }
-    dark_retro_sea_small_rot.header.always_zero = 0;
-    dark_retro_sea_small_rot.header.w = src_h;
-    dark_retro_sea_small_rot.header.h = src_w;
-    dark_retro_sea_small_rot.header.cf = LV_IMG_CF_TRUE_COLOR;
-    dark_retro_sea_small_rot.data_size = (uint32_t)src_w * src_h * 2;
-    dark_retro_sea_small_rot.data = (const uint8_t *)dark_retro_sea_small_rot_map;
+    
+    bg_img_rotated.header.always_zero = 0;
+    bg_img_rotated.header.w = src_h;
+    bg_img_rotated.header.h = src_w;
+    bg_img_rotated.header.cf = LV_IMG_CF_TRUE_COLOR;
+    bg_img_rotated.data_size = (uint32_t)src_w * src_h * 2;
+    bg_img_rotated.data = (const uint8_t *)bg_img_rotated_buf;
 }
 
-static const char *TAG = "stick_controller";
+// =============================================================================
+// MOTOR CURRENT SETTINGS (Adjustable)
+// =============================================================================
+
+#define CURRENT_SLOW    10.0f   // Low power mode (Amps)
+#define CURRENT_MEDIUM  30.0f   // Normal cruising (Amps)
+#define CURRENT_FAST    70.0f   // Full power (Amps)
+
+#define VESC_POLL_INTERVAL_MS   200
+
+// =============================================================================
+// UI Elements
+// =============================================================================
 
 static lv_obj_t *bg_img_obj = NULL;
-static lv_obj_t *img_obj = NULL;
-static bool show_first = true;
+static lv_obj_t *lbl_title = NULL;
+static lv_obj_t *lbl_voltage = NULL;
+static lv_obj_t *lbl_current = NULL;
+static lv_obj_t *lbl_amp_hours = NULL;
+static lv_obj_t *lbl_rpm = NULL;
+static lv_obj_t *lbl_speed_level = NULL;
+static lv_obj_t *lbl_fault = NULL;
+static lv_obj_t *lbl_temp = NULL;
+
+static speed_level_t commanded_speed = SPEED_LEVEL_OFF;
+static float commanded_current = 0.0f;
+static vesc_data_t vesc_data = {0};
+static bool vesc_connected = false;
+
+// =============================================================================
+// UI Creation - Portrait layout with rotated background
+// Screen: 172 wide x 320 tall (portrait)
+// =============================================================================
 
 static void ui_create(void) {
-    // Fill screen background
-    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0x000000), 0);
-
-    // Background image (PNG, embedded)
+    // Rotate and display background image
+    rotate_bg_90_cw();
     bg_img_obj = lv_img_create(lv_scr_act());
-    rotate_bg_90_cw();  // The background image is rotated 90 degrees clockwise.
-    lv_img_set_src(bg_img_obj, &dark_retro_sea_small_rot);
-    lv_obj_center(bg_img_obj);
-    // Optionally scale if needed for screen size (commented out by default)
+    lv_img_set_src(bg_img_obj, &bg_img_rotated);
     lv_obj_align(bg_img_obj, LV_ALIGN_TOP_LEFT, 0, 0);
-    // lv_img_set_zoom(bg_img_obj, 256); // 256 = 1.0x
 
-    img_obj = lv_img_create(lv_scr_act());
-    lv_obj_center(img_obj);
-    lv_img_set_src(img_obj, &stick_img1);
+    // Semi-transparent overlay for text readability
+    lv_obj_t *overlay = lv_obj_create(lv_scr_act());
+    lv_obj_remove_style_all(overlay);
+    lv_obj_set_size(overlay, 172, 320);
+    lv_obj_set_style_bg_color(overlay, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(overlay, LV_OPA_40, 0);
+    lv_obj_align(overlay, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    // Styles - using larger fonts (16 for data, 18 for title/speed)
+    static lv_style_t style_title;
+    lv_style_init(&style_title);
+    lv_style_set_text_color(&style_title, lv_color_hex(0x00FFC8));
+    lv_style_set_text_font(&style_title, &lv_font_montserrat_18);
+
+    static lv_style_t style_data;
+    lv_style_init(&style_data);
+    lv_style_set_text_color(&style_data, lv_color_hex(0xFFFFFF));
+    lv_style_set_text_font(&style_data, &lv_font_montserrat_16);
+
+    static lv_style_t style_speed;
+    lv_style_init(&style_speed);
+    lv_style_set_text_color(&style_speed, lv_color_hex(0xFFD700));
+    lv_style_set_text_font(&style_speed, &lv_font_montserrat_18);
+
+    static lv_style_t style_fault;
+    lv_style_init(&style_fault);
+    lv_style_set_text_color(&style_fault, lv_color_hex(0xFF4444));
+    lv_style_set_text_font(&style_fault, &lv_font_montserrat_16);
+
+    // ==========================================================================
+    // PORTRAIT LAYOUT (172 x 320) - Single column, vertically stacked
+    // ==========================================================================
+    int y = 8;
+    int line_height = 26;  // Larger for bigger fonts
+    int x_margin = 5;
+
+    // Title
+    lbl_title = lv_label_create(lv_scr_act());
+    lv_obj_add_style(lbl_title, &style_title, 0);
+    lv_label_set_text(lbl_title, "DEATH STICK");
+    lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, y);
+    y += line_height + 2;
+
+    // Speed Level (prominent)
+    lbl_speed_level = lv_label_create(lv_scr_act());
+    lv_obj_add_style(lbl_speed_level, &style_speed, 0);
+    lv_label_set_text(lbl_speed_level, "[ OFF ]");
+    lv_obj_align(lbl_speed_level, LV_ALIGN_TOP_MID, 0, y);
+    y += line_height + 8;
+
+    // Voltage
+    lbl_voltage = lv_label_create(lv_scr_act());
+    lv_obj_add_style(lbl_voltage, &style_data, 0);
+    lv_label_set_text(lbl_voltage, "VOLT: --.- V");
+    lv_obj_align(lbl_voltage, LV_ALIGN_TOP_LEFT, x_margin, y);
+    y += line_height;
+
+    // Current
+    lbl_current = lv_label_create(lv_scr_act());
+    lv_obj_add_style(lbl_current, &style_data, 0);
+    lv_label_set_text(lbl_current, "AMPS: --.- A");
+    lv_obj_align(lbl_current, LV_ALIGN_TOP_LEFT, x_margin, y);
+    y += line_height;
+
+    // Amp Hours
+    lbl_amp_hours = lv_label_create(lv_scr_act());
+    lv_obj_add_style(lbl_amp_hours, &style_data, 0);
+    lv_label_set_text(lbl_amp_hours, "Ah: --.-- Ah");
+    lv_obj_align(lbl_amp_hours, LV_ALIGN_TOP_LEFT, x_margin, y);
+    y += line_height;
+
+    // RPM
+    lbl_rpm = lv_label_create(lv_scr_act());
+    lv_obj_add_style(lbl_rpm, &style_data, 0);
+    lv_label_set_text(lbl_rpm, "RPM: -----");
+    lv_obj_align(lbl_rpm, LV_ALIGN_TOP_LEFT, x_margin, y);
+    y += line_height;
+
+    // Temperature
+    lbl_temp = lv_label_create(lv_scr_act());
+    lv_obj_add_style(lbl_temp, &style_data, 0);
+    lv_label_set_text(lbl_temp, "TEMP: --.- C");
+    lv_obj_align(lbl_temp, LV_ALIGN_TOP_LEFT, x_margin, y);
+
+    // Fault Status - at bottom
+    lbl_fault = lv_label_create(lv_scr_act());
+    lv_obj_add_style(lbl_fault, &style_fault, 0);
+    lv_label_set_text(lbl_fault, "VESC: ---");
+    lv_obj_align(lbl_fault, LV_ALIGN_BOTTOM_MID, 0, -8);
 }
 
-static void toggle_picture(void) {
-    show_first = !show_first;
-    lv_img_set_src(img_obj, show_first ? (const void *)&stick_img1
-                                       : (const void *)&stick_img2);
+static void ui_update(void) {
+    char buf[32];
+
+    // Speed level with brackets for visibility
+    const char* speed_str = speed_level_to_string(commanded_speed);
+    snprintf(buf, sizeof(buf), "[ %s ]", speed_str);
+    lv_label_set_text(lbl_speed_level, buf);
+
+    // Speed label color
+    lv_color_t speed_color;
+    switch (commanded_speed) {
+        case SPEED_LEVEL_OFF:    speed_color = lv_color_hex(0x888888); break;
+        case SPEED_LEVEL_SLOW:   speed_color = lv_color_hex(0x44FF44); break;
+        case SPEED_LEVEL_MEDIUM: speed_color = lv_color_hex(0xFFD700); break;
+        case SPEED_LEVEL_FAST:   speed_color = lv_color_hex(0xFF4444); break;
+        default:                 speed_color = lv_color_hex(0xFFFFFF); break;
+    }
+    lv_obj_set_style_text_color(lbl_speed_level, speed_color, 0);
+
+    if (vesc_connected) {
+        snprintf(buf, sizeof(buf), "VOLT: %.1f V", vesc_data.input_voltage);
+        lv_label_set_text(lbl_voltage, buf);
+
+        snprintf(buf, sizeof(buf), "AMPS: %.1f A", vesc_data.avg_motor_current);
+        lv_label_set_text(lbl_current, buf);
+
+        snprintf(buf, sizeof(buf), "Ah: %.2f Ah", vesc_data.amp_hours);
+        lv_label_set_text(lbl_amp_hours, buf);
+
+        snprintf(buf, sizeof(buf), "RPM: %.0f", vesc_data.rpm);
+        lv_label_set_text(lbl_rpm, buf);
+
+        snprintf(buf, sizeof(buf), "TEMP: %.1f C", vesc_data.temp_mosfet);
+        lv_label_set_text(lbl_temp, buf);
+
+        if (vesc_data.fault == VESC_FAULT_NONE) {
+            lv_label_set_text(lbl_fault, "VESC: OK");
+            lv_obj_set_style_text_color(lbl_fault, lv_color_hex(0x44FF44), 0);
+        } else {
+            snprintf(buf, sizeof(buf), "%s", vesc_fault_to_string(vesc_data.fault));
+            lv_label_set_text(lbl_fault, buf);
+            lv_obj_set_style_text_color(lbl_fault, lv_color_hex(0xFF4444), 0);
+        }
+    } else {
+        lv_label_set_text(lbl_voltage, "VOLT: --.- V");
+        lv_label_set_text(lbl_current, "AMPS: --.- A");
+        lv_label_set_text(lbl_amp_hours, "Ah: --.-- Ah");
+        lv_label_set_text(lbl_rpm, "RPM: -----");
+        lv_label_set_text(lbl_temp, "TEMP: --.- C");
+        lv_label_set_text(lbl_fault, "NO VESC");
+        lv_obj_set_style_text_color(lbl_fault, lv_color_hex(0xFF8800), 0);
+    }
 }
 
-static void button_task(void *arg) {
+// =============================================================================
+// Motor Control
+// =============================================================================
+
+static float get_current_for_speed_level(speed_level_t level) {
+    switch (level) {
+        case SPEED_LEVEL_SLOW:   return CURRENT_SLOW;
+        case SPEED_LEVEL_MEDIUM: return CURRENT_MEDIUM;
+        case SPEED_LEVEL_FAST:   return CURRENT_FAST;
+        default:                 return 0.0f;
+    }
+}
+
+static void apply_motor_current(float current) {
+    commanded_current = current;
+    if (current > 0.1f) {
+        vesc_set_current(current);
+    } else {
+        vesc_set_current(0.0f);
+    }
+}
+
+// =============================================================================
+// Tasks
+// =============================================================================
+
+static void vesc_task(void *arg) {
     (void)arg;
+    TickType_t last_wake = xTaskGetTickCount();
+    
+    while (1) {
+        if (vesc_get_values(&vesc_data)) {
+            vesc_connected = true;
+        } else {
+            vesc_connected = false;
+        }
+
+        if (vesc_connected) {
+            vesc_send_keepalive();
+        }
+
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(VESC_POLL_INTERVAL_MS));
+    }
+}
+
+// MOMENTARY: Hold button = motor runs, release = motor stops
+static void control_task(void *arg) {
+    (void)arg;
+    speed_level_t last_speed_level = SPEED_LEVEL_OFF;
+    
+    while (1) {
+        speed_level_t new_speed = speed_buttons_get_level();
+        
+        if (new_speed != last_speed_level) {
+            if (new_speed == SPEED_LEVEL_OFF || last_speed_level == SPEED_LEVEL_OFF) {
+                ESP_LOGI(TAG, "Speed: %s", speed_level_to_string(new_speed));
+            }
+            
+            commanded_speed = new_speed;
+            apply_motor_current(get_current_for_speed_level(new_speed));
+            last_speed_level = new_speed;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
+
+static void boot_button_task(void *arg) {
+    (void)arg;
+    
     while (1) {
         if (BOOT_KEY_State == SINGLE_CLICK) {
             BOOT_KEY_State = NONE_PRESS;
-            ESP_LOGI(TAG, "Button pushed");
-            toggle_picture();
+            ESP_LOGI(TAG, "Boot button (debug)");
+        }
+        if (BOOT_KEY_State == LONG_PRESS_START) {
+            BOOT_KEY_State = NONE_PRESS;
         }
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
+// =============================================================================
+// Main Entry Point
+// =============================================================================
+
 void app_main(void)
 {
-    // Init peripherals
-    button_Init();
+    ESP_LOGI(TAG, "=== Death Stick Controller ===");
+    ESP_LOGI(TAG, "SLOW=%.1fA, MEDIUM=%.1fA, FAST=%.1fA",
+             CURRENT_SLOW, CURRENT_MEDIUM, CURRENT_FAST);
+
     LCD_Init();
     LVGL_Init();
-    stick_images_init();
+    button_Init();
+    speed_buttons_init();
+    
+    esp_err_t ret = vesc_uart_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "VESC UART init failed!");
+    }
 
-    // Create UI
     ui_create();
 
-    // Background task to check button and toggle images
-    xTaskCreatePinnedToCore(button_task, "button_task", 2048, NULL, 3, NULL, 0);
+    xTaskCreatePinnedToCore(vesc_task, "vesc_task", 4096, NULL, 5, NULL, 0);
+    xTaskCreatePinnedToCore(control_task, "control_task", 2048, NULL, 4, NULL, 0);
+    xTaskCreatePinnedToCore(boot_button_task, "boot_btn_task", 2048, NULL, 3, NULL, 0);
 
-    // LVGL main handler loop
+    ESP_LOGI(TAG, "Ready - HOLD buttons for speed control");
+
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(10));
+        ui_update();
         lv_timer_handler();
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
-
-

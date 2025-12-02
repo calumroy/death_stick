@@ -6,6 +6,8 @@ idf_component_register(
         "LVGL_Driver/LVGL_Driver.c"
         "Button_Driver/multi_button.c"
         "Button_Driver/Button_Driver.c"
+        "Button_Driver/Speed_Buttons.c"
+        "VESC_Driver/vesc_uart.c"
         "images/pictures.c"
         "images/dark_retro_sea_small.c"
     INCLUDE_DIRS
@@ -13,7 +15,6 @@ idf_component_register(
         "./LCD_Driver"
         "./LVGL_Driver"
         "./Button_Driver"
+        "./VESC_Driver"
         "./images"
 )
-
-
