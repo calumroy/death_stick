@@ -27,6 +27,11 @@ extern "C" {
 #define SPEED_BTN_MEDIUM_PIN    3   // GP3 - MEDIUM speed
 #define SPEED_BTN_FAST_PIN      4   // GP4 - FAST speed
 
+// GPIO pins for the button LEDs (active HIGH)
+#define SPEED_LED_SLOW_PIN      7   // LED for SLOW button
+#define SPEED_LED_MEDIUM_PIN    8   // LED for MEDIUM button
+#define SPEED_LED_FAST_PIN      9   // LED for FAST button
+
 // Speed level enumeration
 typedef enum {
     SPEED_LEVEL_OFF = 0,
@@ -59,6 +64,16 @@ speed_level_t speed_buttons_get_level(void);
  * @return String description of speed level
  */
 const char* speed_level_to_string(speed_level_t level);
+
+/**
+ * @brief Update LED outputs to match the requested speed level
+ *
+ * Lights only the LED that corresponds to the active speed. All LEDs are
+ * turned off when SPEED_LEVEL_OFF is selected.
+ *
+ * @param level Current speed level
+ */
+void speed_buttons_set_leds(speed_level_t level);
 
 #ifdef __cplusplus
 }

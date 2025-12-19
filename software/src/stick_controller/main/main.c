@@ -317,6 +317,7 @@ static void control_task(void *arg) {
             
             commanded_speed = new_speed;
             apply_motor_current(get_current_for_speed_level(new_speed));
+            speed_buttons_set_leds(commanded_speed);
             last_speed_level = new_speed;
         }
         

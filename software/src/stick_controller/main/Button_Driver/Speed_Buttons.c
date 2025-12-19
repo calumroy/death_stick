@@ -35,8 +35,35 @@ static void speed_buttons_gpio_init(void) {
              SPEED_BTN_SLOW_PIN, SPEED_BTN_MEDIUM_PIN, SPEED_BTN_FAST_PIN);
 }
 
+// GPIO initialization for speed indicator LEDs
+static void speed_leds_gpio_init(void) {
+    gpio_reset_pin(SPEED_LED_SLOW_PIN);
+    gpio_set_direction(SPEED_LED_SLOW_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(SPEED_LED_SLOW_PIN, 0);
+
+    gpio_reset_pin(SPEED_LED_MEDIUM_PIN);
+    gpio_set_direction(SPEED_LED_MEDIUM_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(SPEED_LED_MEDIUM_PIN, 0);
+
+    gpio_reset_pin(SPEED_LED_FAST_PIN);
+    gpio_set_direction(SPEED_LED_FAST_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(SPEED_LED_FAST_PIN, 0);
+
+    ESP_LOGI(TAG, "Speed LEDs initialized: SLOW=GP%d, MEDIUM=GP%d, FAST=GP%d",
+             SPEED_LED_SLOW_PIN, SPEED_LED_MEDIUM_PIN, SPEED_LED_FAST_PIN);
+}
+
+void speed_buttons_set_leds(speed_level_t level) {
+    // Active high: drive the matching LED, turn the others off
+    gpio_set_level(SPEED_LED_SLOW_PIN,   (level == SPEED_LEVEL_SLOW)   ? 1 : 0);
+    gpio_set_level(SPEED_LED_MEDIUM_PIN, (level == SPEED_LEVEL_MEDIUM) ? 1 : 0);
+    gpio_set_level(SPEED_LED_FAST_PIN,   (level == SPEED_LEVEL_FAST)   ? 1 : 0);
+}
+
 void speed_buttons_init(void) {
     speed_buttons_gpio_init();
+    speed_leds_gpio_init();
+    speed_buttons_set_leds(SPEED_LEVEL_OFF);
     ESP_LOGI(TAG, "Speed buttons initialized (momentary mode)");
 }
 
