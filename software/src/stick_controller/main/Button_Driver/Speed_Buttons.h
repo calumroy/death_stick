@@ -48,6 +48,15 @@ typedef enum {
 void speed_buttons_init(void);
 
 /**
+ * @brief Read raw button states (active LOW)
+ *
+ * @param slow_pressed   Output true if SLOW button is pressed
+ * @param medium_pressed Output true if MEDIUM button is pressed
+ * @param fast_pressed   Output true if FAST button is pressed
+ */
+void speed_buttons_get_raw(bool *slow_pressed, bool *medium_pressed, bool *fast_pressed);
+
+/**
  * @brief Get the current speed level based on button state
  * 
  * Reads GPIO directly - returns the speed for whichever button is held.
@@ -74,6 +83,12 @@ const char* speed_level_to_string(speed_level_t level);
  * @param level Current speed level
  */
 void speed_buttons_set_leds(speed_level_t level);
+
+/**
+ * @brief Set all speed LEDs to the same state
+ * @param on true to turn on all LEDs, false to turn all off
+ */
+void speed_buttons_set_all_leds(bool on);
 
 #ifdef __cplusplus
 }

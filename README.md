@@ -46,7 +46,7 @@ Inside the container (ESP-IDF is already exported by entrypoint):
 ```bash
 idf.py --version
 idf.py set-target esp32s3
-cd ./software/src/03_lvgl_example
+cd ./software/src/stick_controller
 idf.py build
 idf.py -p /dev/ttyACM0 flash monitor
 ```c

@@ -53,13 +53,6 @@ static void speed_leds_gpio_init(void) {
              SPEED_LED_SLOW_PIN, SPEED_LED_MEDIUM_PIN, SPEED_LED_FAST_PIN);
 }
 
-void speed_buttons_set_leds(speed_level_t level) {
-    // Active high: drive the matching LED, turn the others off
-    gpio_set_level(SPEED_LED_SLOW_PIN,   (level == SPEED_LEVEL_SLOW)   ? 1 : 0);
-    gpio_set_level(SPEED_LED_MEDIUM_PIN, (level == SPEED_LEVEL_MEDIUM) ? 1 : 0);
-    gpio_set_level(SPEED_LED_FAST_PIN,   (level == SPEED_LEVEL_FAST)   ? 1 : 0);
-}
-
 void speed_buttons_init(void) {
     speed_buttons_gpio_init();
     speed_leds_gpio_init();
@@ -67,11 +60,37 @@ void speed_buttons_init(void) {
     ESP_LOGI(TAG, "Speed buttons initialized (momentary mode)");
 }
 
+void speed_buttons_get_raw(bool *slow_pressed, bool *medium_pressed, bool *fast_pressed) {
+    if (slow_pressed) {
+        *slow_pressed = (gpio_get_level(SPEED_BTN_SLOW_PIN) == 0);
+    }
+    if (medium_pressed) {
+        *medium_pressed = (gpio_get_level(SPEED_BTN_MEDIUM_PIN) == 0);
+    }
+    if (fast_pressed) {
+        *fast_pressed = (gpio_get_level(SPEED_BTN_FAST_PIN) == 0);
+    }
+}
+
+void speed_buttons_set_leds(speed_level_t level) {
+    // Active high: drive the matching LED, turn the others off
+    gpio_set_level(SPEED_LED_SLOW_PIN,   (level == SPEED_LEVEL_SLOW)   ? 1 : 0);
+    gpio_set_level(SPEED_LED_MEDIUM_PIN, (level == SPEED_LEVEL_MEDIUM) ? 1 : 0);
+    gpio_set_level(SPEED_LED_FAST_PIN,   (level == SPEED_LEVEL_FAST)   ? 1 : 0);
+}
+
+void speed_buttons_set_all_leds(bool on) {
+    gpio_set_level(SPEED_LED_SLOW_PIN, on ? 1 : 0);
+    gpio_set_level(SPEED_LED_MEDIUM_PIN, on ? 1 : 0);
+    gpio_set_level(SPEED_LED_FAST_PIN, on ? 1 : 0);
+}
+
 speed_level_t speed_buttons_get_level(void) {
     // Read raw GPIO states (active LOW - pressed = 0)
-    bool slow_pressed   = (gpio_get_level(SPEED_BTN_SLOW_PIN) == 0);
-    bool medium_pressed = (gpio_get_level(SPEED_BTN_MEDIUM_PIN) == 0);
-    bool fast_pressed   = (gpio_get_level(SPEED_BTN_FAST_PIN) == 0);
+    bool slow_pressed = false;
+    bool medium_pressed = false;
+    bool fast_pressed = false;
+    speed_buttons_get_raw(&slow_pressed, &medium_pressed, &fast_pressed);
 
     // Priority: FAST > MEDIUM > SLOW
     // If multiple buttons pressed, highest speed wins

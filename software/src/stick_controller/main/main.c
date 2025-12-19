@@ -27,6 +27,7 @@
 #include "Button_Driver/Button_Driver.h"
 #include "Button_Driver/Speed_Buttons.h"
 #include "VESC_Driver/vesc_uart.h"
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -94,11 +95,13 @@ static lv_obj_t *lbl_rpm = NULL;
 static lv_obj_t *lbl_speed_level = NULL;
 static lv_obj_t *lbl_fault = NULL;
 static lv_obj_t *lbl_temp = NULL;
+static lv_obj_t *lbl_emergency = NULL;
 
 static speed_level_t commanded_speed = SPEED_LEVEL_OFF;
 static float commanded_current = 0.0f;
 static vesc_data_t vesc_data = {0};
 static bool vesc_connected = false;
+static bool emergency_stop_active = false;
 
 // =============================================================================
 // UI Creation - Portrait layout with rotated background
@@ -141,6 +144,11 @@ static void ui_create(void) {
     lv_style_set_text_color(&style_fault, lv_color_hex(0xFF4444));
     lv_style_set_text_font(&style_fault, &lv_font_montserrat_16);
 
+    static lv_style_t style_emergency;
+    lv_style_init(&style_emergency);
+    lv_style_set_text_color(&style_emergency, lv_color_hex(0xFF3333));
+    lv_style_set_text_font(&style_emergency, &lv_font_montserrat_18);
+
     // ==========================================================================
     // PORTRAIT LAYOUT (172 x 320) - Single column, vertically stacked
     // ==========================================================================
@@ -161,6 +169,13 @@ static void ui_create(void) {
     lv_label_set_text(lbl_speed_level, "[ OFF ]");
     lv_obj_align(lbl_speed_level, LV_ALIGN_TOP_MID, 0, y);
     y += line_height + 8;
+
+    // Emergency status (hidden until active)
+    lbl_emergency = lv_label_create(lv_scr_act());
+    lv_obj_add_style(lbl_emergency, &style_emergency, 0);
+    lv_label_set_text(lbl_emergency, "");
+    lv_obj_align(lbl_emergency, LV_ALIGN_TOP_MID, 0, y);
+    y += line_height + 2;
 
     // Voltage
     lbl_voltage = lv_label_create(lv_scr_act());
@@ -222,6 +237,12 @@ static void ui_update(void) {
     }
     lv_obj_set_style_text_color(lbl_speed_level, speed_color, 0);
 
+    if (emergency_stop_active) {
+        lv_label_set_text(lbl_emergency, "EMERGENCY STOP");
+    } else {
+        lv_label_set_text(lbl_emergency, "");
+    }
+
     if (vesc_connected) {
         snprintf(buf, sizeof(buf), "VOLT: %.1f V", vesc_data.input_voltage);
         lv_label_set_text(lbl_voltage, buf);
@@ -279,6 +300,24 @@ static void apply_motor_current(float current) {
     }
 }
 
+static void enter_emergency_stop(void) {
+    emergency_stop_active = true;
+    commanded_speed = SPEED_LEVEL_OFF;
+    apply_motor_current(0.0f);
+    speed_buttons_set_all_leds(false);
+    ESP_LOGW(TAG, "EMERGENCY STOP ACTIVATED");
+}
+
+static void exit_emergency_stop(speed_level_t *last_speed_level) {
+    emergency_stop_active = false;
+    commanded_speed = SPEED_LEVEL_OFF;
+    if (last_speed_level) {
+        *last_speed_level = SPEED_LEVEL_OFF;
+    }
+    speed_buttons_set_leds(commanded_speed);
+    ESP_LOGI(TAG, "Emergency stop cleared");
+}
+
 // =============================================================================
 // Tasks
 // =============================================================================
@@ -306,20 +345,115 @@ static void vesc_task(void *arg) {
 static void control_task(void *arg) {
     (void)arg;
     speed_level_t last_speed_level = SPEED_LEVEL_OFF;
+    TickType_t all_pressed_start = 0;
+    bool tracking_all_pressed = false;
+    TickType_t blink_last_toggle = 0;
+    bool blink_state = false;
+    bool prev_slow = false;
+    bool prev_medium = false;
+    bool prev_fast = false;
+
+    typedef enum {
+        EXIT_WAIT_SLOW_PRESS = 0,
+        EXIT_WAIT_SLOW_RELEASE,
+        EXIT_WAIT_MEDIUM_PRESS,
+        EXIT_WAIT_MEDIUM_RELEASE,
+        EXIT_WAIT_FAST_PRESS,
+        EXIT_WAIT_FAST_RELEASE
+    } emergency_exit_state_t;
+
+    emergency_exit_state_t exit_state = EXIT_WAIT_SLOW_PRESS;
     
     while (1) {
-        speed_level_t new_speed = speed_buttons_get_level();
-        
-        if (new_speed != last_speed_level) {
-            if (new_speed == SPEED_LEVEL_OFF || last_speed_level == SPEED_LEVEL_OFF) {
-                ESP_LOGI(TAG, "Speed: %s", speed_level_to_string(new_speed));
+        bool slow_pressed = false, medium_pressed = false, fast_pressed = false;
+        speed_buttons_get_raw(&slow_pressed, &medium_pressed, &fast_pressed);
+
+        bool all_pressed = slow_pressed && medium_pressed && fast_pressed;
+
+        if (!emergency_stop_active) {
+            if (all_pressed) {
+                if (!tracking_all_pressed) {
+                    tracking_all_pressed = true;
+                    all_pressed_start = xTaskGetTickCount();
+                } else if ((xTaskGetTickCount() - all_pressed_start) >= pdMS_TO_TICKS(2000)) {
+                    enter_emergency_stop();
+                    blink_last_toggle = xTaskGetTickCount();
+                    blink_state = false;
+                    exit_state = EXIT_WAIT_SLOW_PRESS;
+                }
+            } else {
+                tracking_all_pressed = false;
             }
-            
-            commanded_speed = new_speed;
-            apply_motor_current(get_current_for_speed_level(new_speed));
-            speed_buttons_set_leds(commanded_speed);
-            last_speed_level = new_speed;
+
+            if (!emergency_stop_active) {
+                speed_level_t new_speed = speed_buttons_get_level();
+                
+                if (new_speed != last_speed_level) {
+                    if (new_speed == SPEED_LEVEL_OFF || last_speed_level == SPEED_LEVEL_OFF) {
+                        ESP_LOGI(TAG, "Speed: %s", speed_level_to_string(new_speed));
+                    }
+                    
+                    commanded_speed = new_speed;
+                    apply_motor_current(get_current_for_speed_level(new_speed));
+                    speed_buttons_set_leds(commanded_speed);
+                    last_speed_level = new_speed;
+                }
+            }
+        } else {
+            TickType_t now = xTaskGetTickCount();
+            if ((now - blink_last_toggle) >= pdMS_TO_TICKS(500)) {
+                blink_last_toggle = now;
+                blink_state = !blink_state;
+                speed_buttons_set_all_leds(blink_state);
+            }
+
+            if (commanded_current != 0.0f) {
+                apply_motor_current(0.0f);
+            }
+
+            switch (exit_state) {
+                case EXIT_WAIT_SLOW_PRESS:
+                    if (!prev_slow && slow_pressed) {
+                        exit_state = EXIT_WAIT_SLOW_RELEASE;
+                    }
+                    break;
+                case EXIT_WAIT_SLOW_RELEASE:
+                    if (prev_slow && !slow_pressed) {
+                        exit_state = EXIT_WAIT_MEDIUM_PRESS;
+                    }
+                    break;
+                case EXIT_WAIT_MEDIUM_PRESS:
+                    if (!prev_medium && medium_pressed) {
+                        exit_state = EXIT_WAIT_MEDIUM_RELEASE;
+                    }
+                    break;
+                case EXIT_WAIT_MEDIUM_RELEASE:
+                    if (prev_medium && !medium_pressed) {
+                        exit_state = EXIT_WAIT_FAST_PRESS;
+                    }
+                    break;
+                case EXIT_WAIT_FAST_PRESS:
+                    if (!prev_fast && fast_pressed) {
+                        exit_state = EXIT_WAIT_FAST_RELEASE;
+                    }
+                    break;
+                case EXIT_WAIT_FAST_RELEASE:
+                    if (prev_fast && !fast_pressed) {
+                        exit_state = EXIT_WAIT_SLOW_PRESS;
+                        blink_state = false;
+                        speed_buttons_set_all_leds(false);
+                        exit_emergency_stop(&last_speed_level);
+                    }
+                    break;
+                default:
+                    exit_state = EXIT_WAIT_SLOW_PRESS;
+                    break;
+            }
         }
+
+        prev_slow = slow_pressed;
+        prev_medium = medium_pressed;
+        prev_fast = fast_pressed;
         
         vTaskDelay(pdMS_TO_TICKS(20));
     }
