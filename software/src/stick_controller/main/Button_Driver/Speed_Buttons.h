@@ -27,10 +27,14 @@ extern "C" {
 #define SPEED_BTN_MEDIUM_PIN    3   // GP3 - MEDIUM speed
 #define SPEED_BTN_FAST_PIN      4   // GP4 - FAST speed
 
-// GPIO pins for the button LEDs (active HIGH)
+// GPIO pins for the button LEDs (NPN low-side switch: active HIGH)
 #define SPEED_LED_SLOW_PIN      7   // LED for SLOW button
 #define SPEED_LED_MEDIUM_PIN    8   // LED for MEDIUM button
 #define SPEED_LED_FAST_PIN      9   // LED for FAST button
+
+// LED drive levels
+#define SPEED_LED_ON_LEVEL      1
+#define SPEED_LED_OFF_LEVEL     0
 
 // Speed level enumeration
 typedef enum {

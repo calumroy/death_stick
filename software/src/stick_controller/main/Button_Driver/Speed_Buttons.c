@@ -38,16 +38,20 @@ static void speed_buttons_gpio_init(void) {
 // GPIO initialization for speed indicator LEDs
 static void speed_leds_gpio_init(void) {
     gpio_reset_pin(SPEED_LED_SLOW_PIN);
+    // Push-pull output. Also enable pulldown to keep the NPN base off during reset/boot.
+    gpio_set_pull_mode(SPEED_LED_SLOW_PIN, GPIO_PULLDOWN_ONLY);
     gpio_set_direction(SPEED_LED_SLOW_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(SPEED_LED_SLOW_PIN, 0);
+    gpio_set_level(SPEED_LED_SLOW_PIN, SPEED_LED_OFF_LEVEL);
 
     gpio_reset_pin(SPEED_LED_MEDIUM_PIN);
+    gpio_set_pull_mode(SPEED_LED_MEDIUM_PIN, GPIO_PULLDOWN_ONLY);
     gpio_set_direction(SPEED_LED_MEDIUM_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(SPEED_LED_MEDIUM_PIN, 0);
+    gpio_set_level(SPEED_LED_MEDIUM_PIN, SPEED_LED_OFF_LEVEL);
 
     gpio_reset_pin(SPEED_LED_FAST_PIN);
+    gpio_set_pull_mode(SPEED_LED_FAST_PIN, GPIO_PULLDOWN_ONLY);
     gpio_set_direction(SPEED_LED_FAST_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(SPEED_LED_FAST_PIN, 0);
+    gpio_set_level(SPEED_LED_FAST_PIN, SPEED_LED_OFF_LEVEL);
 
     ESP_LOGI(TAG, "Speed LEDs initialized: SLOW=GP%d, MEDIUM=GP%d, FAST=GP%d",
              SPEED_LED_SLOW_PIN, SPEED_LED_MEDIUM_PIN, SPEED_LED_FAST_PIN);
@@ -73,16 +77,17 @@ void speed_buttons_get_raw(bool *slow_pressed, bool *medium_pressed, bool *fast_
 }
 
 void speed_buttons_set_leds(speed_level_t level) {
-    // Active high: drive the matching LED, turn the others off
-    gpio_set_level(SPEED_LED_SLOW_PIN,   (level == SPEED_LEVEL_SLOW)   ? 1 : 0);
-    gpio_set_level(SPEED_LED_MEDIUM_PIN, (level == SPEED_LEVEL_MEDIUM) ? 1 : 0);
-    gpio_set_level(SPEED_LED_FAST_PIN,   (level == SPEED_LEVEL_FAST)   ? 1 : 0);
+    // Active low: drive the matching LED ON level, others OFF level
+    gpio_set_level(SPEED_LED_SLOW_PIN,   (level == SPEED_LEVEL_SLOW)   ? SPEED_LED_ON_LEVEL : SPEED_LED_OFF_LEVEL);
+    gpio_set_level(SPEED_LED_MEDIUM_PIN, (level == SPEED_LEVEL_MEDIUM) ? SPEED_LED_ON_LEVEL : SPEED_LED_OFF_LEVEL);
+    gpio_set_level(SPEED_LED_FAST_PIN,   (level == SPEED_LEVEL_FAST)   ? SPEED_LED_ON_LEVEL : SPEED_LED_OFF_LEVEL);
 }
 
 void speed_buttons_set_all_leds(bool on) {
-    gpio_set_level(SPEED_LED_SLOW_PIN, on ? 1 : 0);
-    gpio_set_level(SPEED_LED_MEDIUM_PIN, on ? 1 : 0);
-    gpio_set_level(SPEED_LED_FAST_PIN, on ? 1 : 0);
+    int level = on ? SPEED_LED_ON_LEVEL : SPEED_LED_OFF_LEVEL;
+    gpio_set_level(SPEED_LED_SLOW_PIN, level);
+    gpio_set_level(SPEED_LED_MEDIUM_PIN, level);
+    gpio_set_level(SPEED_LED_FAST_PIN, level);
 }
 
 speed_level_t speed_buttons_get_level(void) {
