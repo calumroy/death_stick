@@ -129,7 +129,7 @@
     <m_current_backoff_gain>0.5</m_current_backoff_gain>
     <m_encoder_counts>8192</m_encoder_counts>
     <m_sensor_port_mode>0</m_sensor_port_mode>
-    <m_invert_direction>0</m_invert_direction>
+    <m_invert_direction>1</m_invert_direction>
     <m_drv8301_oc_mode>0</m_drv8301_oc_mode>
     <m_drv8301_oc_adj>16</m_drv8301_oc_adj>
     <m_bldc_f_sw_min>3000</m_bldc_f_sw_min>
@@ -146,17 +146,25 @@
     <si_battery_type>0</si_battery_type>
     <si_battery_cells>10</si_battery_cells>
     <si_battery_ah>31</si_battery_ah>
-    <motor_brand></motor_brand>
-    <motor_model></motor_model>
+    <motor_brand>Unnamed</motor_brand>
+    <motor_model>Not Specified</motor_model>
     <motor_weight>0</motor_weight>
     <motor_poles>14</motor_poles>
     <motor_sensor_type>0</motor_sensor_type>
-    <motor_description></motor_description>
+    <motor_description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; font-size:12pt; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;A motor description can be edited here.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</motor_description>
     <motor_loss_torque>0.03</motor_loss_torque>
     <motor_quality_bearings>0</motor_quality_bearings>
     <motor_quality_magnets>0</motor_quality_magnets>
     <motor_quality_construction>0</motor_quality_construction>
-    <motor_quality_description></motor_quality_description>
+    <motor_quality_description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Roboto'; font-size:12pt; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Some comments about the motor quality. Images can be added as well.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</motor_quality_description>
     <bms.type>1</bms.type>
     <bms.t_limit_start>45</bms.t_limit_start>
     <bms.t_limit_end>65</bms.t_limit_end>
