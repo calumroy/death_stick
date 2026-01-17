@@ -76,11 +76,14 @@ static void rotate_bg_90_cw(void) {
 // MOTOR CURRENT SETTINGS (Adjustable)
 // =============================================================================
 
-#define CURRENT_SLOW    10.0f   // Low power mode (Amps)
-#define CURRENT_MEDIUM  30.0f   // Normal cruising (Amps)
+#define CURRENT_SLOW    20.0f   // Low power mode (Amps)
+#define CURRENT_MEDIUM  40.0f   // Normal cruising (Amps)
 #define CURRENT_FAST    70.0f   // Full power (Amps)
 
 #define VESC_POLL_INTERVAL_MS   200
+// Re-assert the current command periodically so the VESC doesn't time out or
+// "forget" the last setpoint if a packet is missed.
+#define VESC_CMD_INTERVAL_MS    100
 
 // =============================================================================
 // UI Elements
@@ -97,11 +100,11 @@ static lv_obj_t *lbl_fault = NULL;
 static lv_obj_t *lbl_temp = NULL;
 static lv_obj_t *lbl_emergency = NULL;
 
-static speed_level_t commanded_speed = SPEED_LEVEL_OFF;
-static float commanded_current = 0.0f;
+static volatile speed_level_t commanded_speed = SPEED_LEVEL_OFF;
+static volatile float commanded_current = 0.0f;
 static vesc_data_t vesc_data = {0};
-static bool vesc_connected = false;
-static bool emergency_stop_active = false;
+static volatile bool vesc_connected = false;
+static volatile bool emergency_stop_active = false;
 
 // =============================================================================
 // UI Creation - Portrait layout with rotated background
@@ -325,6 +328,7 @@ static void exit_emergency_stop(speed_level_t *last_speed_level) {
 static void vesc_task(void *arg) {
     (void)arg;
     TickType_t last_wake = xTaskGetTickCount();
+    TickType_t last_cmd_send = 0;
     
     while (1) {
         if (vesc_get_values(&vesc_data)) {
@@ -333,8 +337,17 @@ static void vesc_task(void *arg) {
             vesc_connected = false;
         }
 
-        if (vesc_connected) {
-            vesc_send_keepalive();
+        // Always send keepalive. If we only send it when "connected", a single
+        // missed telemetry reply can cause us to stop keepalives and then lose comms.
+        vesc_send_keepalive();
+
+        // Continuous current command: periodically re-send the current setpoint.
+        // This helps keep the VESC alive and ensures OFF/STOP is reasserted too.
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_cmd_send) >= pdMS_TO_TICKS(VESC_CMD_INTERVAL_MS)) {
+            last_cmd_send = now;
+            float cur = emergency_stop_active ? 0.0f : commanded_current;
+            vesc_set_current(cur);
         }
 
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(VESC_POLL_INTERVAL_MS));
