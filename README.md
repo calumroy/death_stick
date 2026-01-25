@@ -2,6 +2,19 @@
 
 A fun death stick.
 
+## Button Controls
+
+Three speed buttons (active LOW, active while held):
+- **SLOW** (GP2): 20A - Low power
+- **MEDIUM** (GP3): 40A - Normal cruising  
+- **FAST** (GP4): 70A - Full power (ramps up over 1 second)
+
+Release all buttons to stop.
+
+**Emergency Stop:** Hold all 3 buttons for 2 seconds. Current cuts immediately when all buttons are pressed.
+
+**Exit Emergency Stop:** Press and hold each button in sequence (SLOW → MEDIUM → FAST), holding each for 500ms. If multiple buttons are pressed simultaneously, the sequence resets.
+
 ## Software 
 
 The controller is an [ESP32-S3-LCD-1.47B](https://www.waveshare.com/wiki/ESP32-S3-LCD-1.47B) board.

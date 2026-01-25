@@ -85,6 +85,13 @@ static void rotate_bg_90_cw(void) {
 // "forget" the last setpoint if a packet is missed.
 #define VESC_CMD_INTERVAL_MS    100
 
+// Ramp time for FAST button - current ramps from previous value to CURRENT_FAST
+#define RAMP_TIME_FAST_MS       1000    // Time to ramp to FAST current (ms)
+
+// Emergency stop settings
+#define EMERGENCY_ENTER_HOLD_MS 2000    // Hold all buttons this long to enter emergency stop
+#define EMERGENCY_EXIT_HOLD_MS  500     // Hold each button this long in exit sequence
+
 // =============================================================================
 // UI Elements
 // =============================================================================
@@ -360,22 +367,32 @@ static void control_task(void *arg) {
     speed_level_t last_speed_level = SPEED_LEVEL_OFF;
     TickType_t all_pressed_start = 0;
     bool tracking_all_pressed = false;
+    bool all_pressed_current_suppressed = false;  // True when current is suppressed during all-pressed
     TickType_t blink_last_toggle = 0;
     bool blink_state = false;
     bool prev_slow = false;
     bool prev_medium = false;
     bool prev_fast = false;
 
+    // Fast button ramp state
+    bool is_ramping_fast = false;
+    TickType_t fast_ramp_start_time = 0;
+    float fast_ramp_base_current = 0.0f;
+
     typedef enum {
         EXIT_WAIT_SLOW_PRESS = 0,
+        EXIT_WAIT_SLOW_HOLD,
         EXIT_WAIT_SLOW_RELEASE,
         EXIT_WAIT_MEDIUM_PRESS,
+        EXIT_WAIT_MEDIUM_HOLD,
         EXIT_WAIT_MEDIUM_RELEASE,
         EXIT_WAIT_FAST_PRESS,
+        EXIT_WAIT_FAST_HOLD,
         EXIT_WAIT_FAST_RELEASE
     } emergency_exit_state_t;
 
     emergency_exit_state_t exit_state = EXIT_WAIT_SLOW_PRESS;
+    TickType_t exit_button_hold_start = 0;
     
     while (1) {
         bool slow_pressed = false, medium_pressed = false, fast_pressed = false;
@@ -386,19 +403,38 @@ static void control_task(void *arg) {
         if (!emergency_stop_active) {
             if (all_pressed) {
                 if (!tracking_all_pressed) {
+                    // Just started pressing all buttons - immediately cut current
                     tracking_all_pressed = true;
+                    all_pressed_current_suppressed = true;
                     all_pressed_start = xTaskGetTickCount();
-                } else if ((xTaskGetTickCount() - all_pressed_start) >= pdMS_TO_TICKS(2000)) {
+                    apply_motor_current(0.0f);
+                    is_ramping_fast = false;  // Cancel any ramp in progress
+                    ESP_LOGI(TAG, "All buttons pressed - current suppressed");
+                } else if ((xTaskGetTickCount() - all_pressed_start) >= pdMS_TO_TICKS(EMERGENCY_ENTER_HOLD_MS)) {
                     enter_emergency_stop();
                     blink_last_toggle = xTaskGetTickCount();
                     blink_state = false;
                     exit_state = EXIT_WAIT_SLOW_PRESS;
+                    all_pressed_current_suppressed = false;
                 }
             } else {
+                // Not all pressed - restore normal operation if we were suppressing
+                if (all_pressed_current_suppressed) {
+                    all_pressed_current_suppressed = false;
+                    // Restore current for whatever speed level is now active
+                    speed_level_t current_level = speed_buttons_get_level();
+                    if (current_level == SPEED_LEVEL_FAST) {
+                        // Start ramping to FAST from zero
+                        is_ramping_fast = true;
+                        fast_ramp_start_time = xTaskGetTickCount();
+                        fast_ramp_base_current = 0.0f;
+                    }
+                    ESP_LOGI(TAG, "All buttons released early - resuming normal");
+                }
                 tracking_all_pressed = false;
             }
 
-            if (!emergency_stop_active) {
+            if (!emergency_stop_active && !all_pressed_current_suppressed) {
                 speed_level_t new_speed = speed_buttons_get_level();
                 
                 if (new_speed != last_speed_level) {
@@ -407,9 +443,39 @@ static void control_task(void *arg) {
                     }
                     
                     commanded_speed = new_speed;
-                    apply_motor_current(get_current_for_speed_level(new_speed));
                     speed_buttons_set_leds(commanded_speed);
+                    
+                    if (new_speed == SPEED_LEVEL_FAST) {
+                        // Start ramping to FAST from current commanded value
+                        is_ramping_fast = true;
+                        fast_ramp_start_time = xTaskGetTickCount();
+                        fast_ramp_base_current = commanded_current;
+                        ESP_LOGI(TAG, "Starting FAST ramp from %.1fA", fast_ramp_base_current);
+                    } else {
+                        // Not FAST - apply current immediately and cancel any ramp
+                        is_ramping_fast = false;
+                        apply_motor_current(get_current_for_speed_level(new_speed));
+                    }
+                    
                     last_speed_level = new_speed;
+                }
+                
+                // Handle FAST ramping - update current each iteration
+                if (is_ramping_fast && commanded_speed == SPEED_LEVEL_FAST) {
+                    TickType_t elapsed = xTaskGetTickCount() - fast_ramp_start_time;
+                    uint32_t elapsed_ms = (uint32_t)(elapsed * portTICK_PERIOD_MS);
+                    
+                    if (elapsed_ms >= RAMP_TIME_FAST_MS) {
+                        // Ramp complete
+                        apply_motor_current(CURRENT_FAST);
+                        is_ramping_fast = false;
+                    } else {
+                        // Calculate ramped current
+                        float ramp_fraction = (float)elapsed_ms / (float)RAMP_TIME_FAST_MS;
+                        float ramped_current = fast_ramp_base_current + 
+                            (CURRENT_FAST - fast_ramp_base_current) * ramp_fraction;
+                        apply_motor_current(ramped_current);
+                    }
                 }
             }
         } else {
@@ -424,40 +490,99 @@ static void control_task(void *arg) {
                 apply_motor_current(0.0f);
             }
 
+            // Check for exclusive button presses (only one button at a time)
+            bool only_slow = slow_pressed && !medium_pressed && !fast_pressed;
+            bool only_medium = !slow_pressed && medium_pressed && !fast_pressed;
+            bool only_fast = !slow_pressed && !medium_pressed && fast_pressed;
+            bool multiple_pressed = (slow_pressed && medium_pressed) || 
+                                    (slow_pressed && fast_pressed) || 
+                                    (medium_pressed && fast_pressed);
+            
             switch (exit_state) {
                 case EXIT_WAIT_SLOW_PRESS:
-                    if (!prev_slow && slow_pressed) {
+                    // Wait for ONLY slow button to be pressed
+                    if (only_slow && !prev_slow) {
+                        exit_state = EXIT_WAIT_SLOW_HOLD;
+                        exit_button_hold_start = xTaskGetTickCount();
+                    }
+                    break;
+                    
+                case EXIT_WAIT_SLOW_HOLD:
+                    // Check if slow is still held exclusively for required time
+                    if (multiple_pressed || !slow_pressed) {
+                        // Multi-button or released early - cancel and restart
+                        exit_state = EXIT_WAIT_SLOW_PRESS;
+                    } else if ((xTaskGetTickCount() - exit_button_hold_start) >= pdMS_TO_TICKS(EMERGENCY_EXIT_HOLD_MS)) {
+                        // Held long enough - wait for release
                         exit_state = EXIT_WAIT_SLOW_RELEASE;
                     }
                     break;
+                    
                 case EXIT_WAIT_SLOW_RELEASE:
-                    if (prev_slow && !slow_pressed) {
+                    if (multiple_pressed) {
+                        // Multi-button pressed - cancel and restart
+                        exit_state = EXIT_WAIT_SLOW_PRESS;
+                    } else if (!slow_pressed) {
+                        // Released - move to next button
                         exit_state = EXIT_WAIT_MEDIUM_PRESS;
                     }
                     break;
+                    
                 case EXIT_WAIT_MEDIUM_PRESS:
-                    if (!prev_medium && medium_pressed) {
+                    if (only_medium && !prev_medium) {
+                        exit_state = EXIT_WAIT_MEDIUM_HOLD;
+                        exit_button_hold_start = xTaskGetTickCount();
+                    } else if (multiple_pressed) {
+                        // Multi-button - cancel and restart
+                        exit_state = EXIT_WAIT_SLOW_PRESS;
+                    }
+                    break;
+                    
+                case EXIT_WAIT_MEDIUM_HOLD:
+                    if (multiple_pressed || !medium_pressed) {
+                        exit_state = EXIT_WAIT_SLOW_PRESS;
+                    } else if ((xTaskGetTickCount() - exit_button_hold_start) >= pdMS_TO_TICKS(EMERGENCY_EXIT_HOLD_MS)) {
                         exit_state = EXIT_WAIT_MEDIUM_RELEASE;
                     }
                     break;
+                    
                 case EXIT_WAIT_MEDIUM_RELEASE:
-                    if (prev_medium && !medium_pressed) {
+                    if (multiple_pressed) {
+                        exit_state = EXIT_WAIT_SLOW_PRESS;
+                    } else if (!medium_pressed) {
                         exit_state = EXIT_WAIT_FAST_PRESS;
                     }
                     break;
+                    
                 case EXIT_WAIT_FAST_PRESS:
-                    if (!prev_fast && fast_pressed) {
+                    if (only_fast && !prev_fast) {
+                        exit_state = EXIT_WAIT_FAST_HOLD;
+                        exit_button_hold_start = xTaskGetTickCount();
+                    } else if (multiple_pressed) {
+                        exit_state = EXIT_WAIT_SLOW_PRESS;
+                    }
+                    break;
+                    
+                case EXIT_WAIT_FAST_HOLD:
+                    if (multiple_pressed || !fast_pressed) {
+                        exit_state = EXIT_WAIT_SLOW_PRESS;
+                    } else if ((xTaskGetTickCount() - exit_button_hold_start) >= pdMS_TO_TICKS(EMERGENCY_EXIT_HOLD_MS)) {
                         exit_state = EXIT_WAIT_FAST_RELEASE;
                     }
                     break;
+                    
                 case EXIT_WAIT_FAST_RELEASE:
-                    if (prev_fast && !fast_pressed) {
+                    if (multiple_pressed) {
+                        exit_state = EXIT_WAIT_SLOW_PRESS;
+                    } else if (!fast_pressed) {
+                        // Sequence complete - exit emergency stop
                         exit_state = EXIT_WAIT_SLOW_PRESS;
                         blink_state = false;
                         speed_buttons_set_all_leds(false);
                         exit_emergency_stop(&last_speed_level);
                     }
                     break;
+                    
                 default:
                     exit_state = EXIT_WAIT_SLOW_PRESS;
                     break;
